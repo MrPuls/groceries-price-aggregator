@@ -22,8 +22,8 @@ ADDONS = {}
 ROBOTSTXT_OBEY = True
 
 # Concurrency and throttling settings
-# CONCURRENT_REQUESTS = 16
-# CONCURRENT_REQUESTS_PER_DOMAIN = 24
+CONCURRENT_REQUESTS = 256
+CONCURRENT_REQUESTS_PER_DOMAIN = 16
 # DOWNLOAD_DELAY = 10
 
 # Disable cookies (enabled by default)
@@ -64,11 +64,11 @@ ROBOTSTXT_OBEY = True
 
 # Enable and configure the AutoThrottle extension (disabled by default)
 # See https://docs.scrapy.org/en/latest/topics/autothrottle.html
-# AUTOTHROTTLE_ENABLED = True
+AUTOTHROTTLE_ENABLED = True
 # The initial download delay
-# AUTOTHROTTLE_START_DELAY = 5
+AUTOTHROTTLE_START_DELAY = 1
 # The maximum download delay to be set in case of high latencies
-# AUTOTHROTTLE_MAX_DELAY = 60
+AUTOTHROTTLE_MAX_DELAY = 60
 # The average number of requests Scrapy should be sending in parallel to
 # each remote server
 # AUTOTHROTTLE_TARGET_CONCURRENCY = 1.0

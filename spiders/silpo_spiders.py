@@ -1,24 +1,15 @@
 import scrapy
 
+
 class SilpoSpider(scrapy.Spider):
+    name = "silpo"
     def parse(self, response):
         for item in response.css("div.products-list__item"):
             yield {
                 "name": item.css('div.product-card__title::text').get(),
                 "price": item.css('div.product-card-price__displayPrice::text').get(),
+                "page": response.css('.pagination-item.pagination-item--current::text').get(),
             }
-        current_page = response.url.replace('https://silpo.ua', '')
-        # links = response.css("div.pagination__items a::attr(href)").getall()
-        # try:
-        #     next_page = links[links.index(current_page) + 1]
-        # except IndexError:
-        #     next_page = None
-
-        # TODO: As an optimization, we can skip the products which are unavailable or out of stock
-
-        # TODO: Perhaps this process can be parallelized too? Something like
-        #  "get amount of pages and crawl 50 with each iteration"
-
         # TODO: This one is more stable but ignores last page
         next_page = response.css('.pagination-item.pagination-item--next-page::attr(href)').get()
         if next_page:
@@ -239,3 +230,31 @@ class PetProductsSpider(SilpoSpider):
             'results/pet_products.csv': {'format': 'csv'},
         }
     }
+
+# settings = get_project_settings()
+# process = CrawlerProcess(settings)
+# process.crawl(FruitsAndVegetablesSpider)
+# process.crawl(MeatSpider)
+# process.crawl(SausagesAndDelicaciesSpider)
+# process.crawl(CheeseSpider)
+# process.crawl(BreadAndBakerySpider)
+# process.crawl(TakeoutSpider)
+# process.crawl(MilkAndEggsSpider)
+# process.crawl(InternalProductsSpider)
+# process.crawl(TraditionStandSpider)
+# process.crawl(HealthyFoodsSpider)
+# process.crawl(GroceriesSpider)
+# process.crawl(SousesAndSpicesSpider)
+# process.crawl(SweetsSpider)
+# process.crawl(SnacksSpider)
+# process.crawl(CoffeeAndTeaSpider)
+# process.crawl(DrinksSpider)
+# process.crawl(FrozenSpider)
+# process.crawl(AlcoholSpider)
+# process.crawl(CigarettesSpider)
+# process.crawl(FlowersSpider)
+# process.crawl(HomeProductsSpider)
+# process.crawl(HygieneSpider)
+# process.crawl(KidsProductsSpider)
+# process.crawl(PetProductsSpider)
+# process.start()
