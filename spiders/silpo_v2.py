@@ -8,6 +8,7 @@ from scrapy.utils.project import get_project_settings
 
 class SilpoSpider(scrapy.Spider):
     name = "silpo_v2"
+    base_url = "https://silpo.ua"
     start_urls = [
         "https://silpo.ua/category/frukty-ovochi-4788",
         "https://silpo.ua/category/m-iaso-4411",
@@ -43,10 +44,14 @@ class SilpoSpider(scrapy.Spider):
                 "price": item.css('div.product-card-price__displayPrice::text').get(),
                 "category": response.css('h1.catalog__products-title::text').get(),
                 "page": response.css('.pagination-item.pagination-item--current::text').get(),
+                "ref": self.base_url + item.css('a.product-card::attr(href)').get()
             }
         # TODO: Ignores the last page. Need a fix
         next_page = response.css('.pagination-item.pagination-item--next-page::attr(href)').get()
-        if next_page:
+        if not next_page:
+            next_page = response.css('.pagination-item.pagination-item:nth-last-child(2)::attr(href)').get()
+
+        if next_page[-2:] != response.url[-2:]:
             yield response.follow(next_page, callback=self.parse)
 
 if __name__ == '__main__':
