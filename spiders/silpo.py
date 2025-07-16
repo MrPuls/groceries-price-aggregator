@@ -40,7 +40,7 @@ class SilpoSpider(scrapy.Spider):
     def parse(self, response):
         for item in response.css("div.products-list__item"):
             yield {
-                "name": item.css('div.product-card__title::text').get(),
+                "name": item.css('h3.product-card__title::text').get(),
                 "price": item.css('div.product-card-price__displayPrice::text').get(),
                 "category": response.css('h1.catalog__products-title::text').get(),
                 "page": response.css('.pagination-item.pagination-item--current::text').get(),
