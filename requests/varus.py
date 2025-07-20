@@ -123,7 +123,7 @@ def get_products(category_ids: list):
         response = requests.get(products_url, params=products_params, headers=headers)
         products = response.json()['hits']
         total_records = response.json()['total']['value']
-        print(f"Current from value is: {from_value}")
+        print(f"Current from value is: {from_value}") 
         if from_value > total_records:
             break
         for item in products:
