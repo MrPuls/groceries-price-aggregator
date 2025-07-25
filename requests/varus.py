@@ -10,7 +10,7 @@ categories_url = "https://varus.ua/api/catalog/vue_storefront_catalog_2/banner/_
 headers = {
     "Accept": "application/json",
     "Content-Type": "application/json",
-    "User-Agent": "Python-requests/2.31.0"
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0"
 }
 
 
