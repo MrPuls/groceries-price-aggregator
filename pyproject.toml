@@ -4,5 +4,7 @@ version = "0.1.0"
 description = "Add your description here"
 requires-python = ">=3.13"
 dependencies = [
-    "scrapy>=2.13.3",
+    "beautifulsoup4>=4.13.4",
+    "lxml>=6.0.0",
+    "requests>=2.32.4",
 ]
