@@ -1,12 +1,9 @@
-import csv
-from datetime import datetime
-
 import requests
 
-from src.base import GroceriesAggregator
+from aggregators.base import GroceriesAggregator
 
 
-class AtbAggregator(GroceriesAggregator):
+class MetroAggregator(GroceriesAggregator):
     headers = {
         'Host': 'stores-api.zakaz.ua',
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:141.0) Gecko/20100101 Firefox/141.0',
@@ -38,7 +35,8 @@ class AtbAggregator(GroceriesAggregator):
 
     def get_products(self, category: tuple):
         products = []
-        products_url = f'https://stores-api.zakaz.ua/stores/48215614/categories/{category[0]}/products'
+        category_id, category_title = category
+        products_url = f'https://stores-api.zakaz.ua/stores/48215614/categories/{category_id}/products'
         product_params_page = 1
         while True:
             product_params = {
@@ -55,19 +53,13 @@ class AtbAggregator(GroceriesAggregator):
                     'name': product['title'],
                     'price': format(product['price'] / 100, '.2f') + ' грн',
                     'ref': product['web_url'],
-                    'category': category[1],
+                    'category': category_title,
                     'shop': 'metro',
                 })
 
+            if len(products) == products_response.json()['count']:
+                print(f'[{self.__class__.__name__}] All items collected!')
+
             product_params_page += 1
 
-        if len(products) == products_response.json()['count']:
-            print(f'All items collected!')
         return products
-
-    def get_products_bulk(self):
-        bulk_results = []
-        for category in self.get_categories():
-            products = self.get_products(category)
-            bulk_results += products
-        return bulk_results

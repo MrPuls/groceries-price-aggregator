@@ -1,7 +1,7 @@
 from urllib import request
 from bs4 import BeautifulSoup
 
-from src.base import GroceriesAggregator
+from aggregators.base import GroceriesAggregator
 
 
 class AtbAggregator(GroceriesAggregator):
@@ -63,11 +63,3 @@ class AtbAggregator(GroceriesAggregator):
             if int(current_page_value) != int(max_pages):
                 self.get_products(url, next_page_num)
         return self.results
-
-    def get_products_bulk(self):
-        bulk_results = []
-        categories = self.get_categories()
-        for category in categories:
-           bulk_results += self.get_products(category)
-
-        return bulk_results
