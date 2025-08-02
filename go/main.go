@@ -9,19 +9,20 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
+	"sync"
+	"time"
 )
 
 type CategoryItem struct {
-	Slug string `json:"slug"`
+	Title string
+	Slug  string `json:"slug"`
+	Total int    `json:"total"`
 }
 
 type Categories struct {
 	Total int64          `json:"total"`
 	Items []CategoryItem `json:"items"`
-}
-
-type CategoryDetails struct {
-	Title string `json:"title"`
 }
 
 type ProductDetails struct {
@@ -32,21 +33,24 @@ type ProductDetails struct {
 }
 
 type Product struct {
-	Total int64            `json:"total"`
+	Total int              `json:"total"`
 	Items []ProductDetails `json:"items"`
 }
 
-type ProductDescription struct {
-	Name     string
-	Ref      string
-	Price    string
-	Category string
-	Shop     string
+var client = &http.Client{
+	Timeout: 30 * time.Second,
+	Transport: &http.Transport{
+		MaxIdleConns:        100,
+		MaxIdleConnsPerHost: 10,
+		MaxConnsPerHost:     75,
+		IdleConnTimeout:     90 * time.Second,
+		TLSHandshakeTimeout: 10 * time.Second,
+		DisableKeepAlives:   false,
+	},
 }
 
-func makeRequest(reqUrl string, params map[string]string) (resp *http.Response, err error) {
+func makeRequest(cli *http.Client, reqUrl string, params map[string]string) (resp *http.Response, err error) {
 	// TODO: create client as a type method
-	client := &http.Client{}
 	if params != nil {
 		p := url.Values{}
 		for k, v := range params {
@@ -74,7 +78,8 @@ func makeRequest(reqUrl string, params map[string]string) (resp *http.Response, 
 	req.Header.Add("Sec-GPC", "1")
 	req.Header.Add("TE", "trailers")
 	req.Header.Add("Accept-Language", "en-GB,en;q=0.5")
-	resp, respErr := client.Do(req)
+	fmt.Printf("reqUrl: %s\n", reqUrl)
+	resp, respErr := cli.Do(req)
 	if respErr != nil {
 		return nil, respErr
 	}
@@ -82,135 +87,158 @@ func makeRequest(reqUrl string, params map[string]string) (resp *http.Response, 
 	return resp, nil
 }
 
-func getCategories() ([]string, error) {
+func (c *Categories) getCategories() {
 	categoriesUrl := "https://sf-ecom-api.silpo.ua/v1/branches/00000000-0000-0000-0000-000000000000/categories/tree"
 	params := map[string]string{
 		"deliveryType": "DeliveryHome",
 		"depth":        "1",
 	}
-	resp, respErr := makeRequest(categoriesUrl, params)
+	resp, respErr := makeRequest(client, categoriesUrl, params)
 	if respErr != nil {
-		return nil, respErr
+		panic(respErr)
 	}
-	defer resp.Body.Close()
 	bb, _ := io.ReadAll(resp.Body)
-
-	var c Categories
+	resp.Body.Close()
 	rb := json.Unmarshal(bb, &c)
 	if rb != nil {
 		panic(rb)
 	}
-	var ra []string
+	var total int
 	for _, v := range c.Items {
-		ra = append(ra, v.Slug)
+		total += v.Total
 	}
-	return ra, nil
+	fmt.Printf("Found %v categories with total amount of items: %v\n", c.Total, total)
 }
 
-func getCategoriesTitles(cts []string) (map[string]string, error) {
+func (c *Categories) getCategoriesTitles() {
 	categoryDetailsUrl := "https://sf-ecom-api.silpo.ua/v1/uk/branches/00000000-0000-0000-0000-000000000000/categories/"
-	result := map[string]string{}
-	for _, ct := range cts {
-		ctUrl := fmt.Sprintf("%s%s", categoryDetailsUrl, ct)
-		resp, err := makeRequest(ctUrl, nil)
+	for k, v := range c.Items {
+		ctUrl := fmt.Sprintf("%s%s", categoryDetailsUrl, v.Slug)
+		resp, err := makeRequest(client, ctUrl, nil)
 		if err != nil {
-			return nil, err
+			panic(err)
 		}
-		defer resp.Body.Close()
 		bb, _ := io.ReadAll(resp.Body)
-		var cd CategoryDetails
-		rb := json.Unmarshal(bb, &cd)
+		resp.Body.Close()
+		var ci CategoryItem
+		rb := json.Unmarshal(bb, &ci)
 		if rb != nil {
-			return nil, rb
+			panic(rb)
 		}
-
-		result[ct] = cd.Title
+		c.Items[k].Title = ci.Title
 	}
-	return result, nil
 }
-func getProducts(ctg map[string]string) ([][]string, error) {
+func getProducts(cti []CategoryItem) ([][]string, error) {
 	productsUrl := "https://sf-ecom-api.silpo.ua/v1/uk/branches/00000000-0000-0000-0000-000000000000/products"
+	querySize := 100
+	mu := sync.Mutex{}
 	var result [][]string
-	// TODO: Works, but need to parallelize to goroutines, increase offset.
-	// 	Also should fix the defer in loop leaks due to each request will be in separate goroutine
-	for slug, title := range ctg {
-		params := map[string]string{
-			"deliveryType":           "DeliveryHome",
-			"category":               slug,
-			"includeChildCategories": "true",
-			"sortBy":                 "popularity",
-			"sortDirection":          "desc",
-			"inStock":                "false",
-			"limit":                  "100",
-			"offset":                 "0",
-		}
-		resp, respErr := makeRequest(productsUrl, params)
-		if respErr != nil {
-			return nil, respErr
-		}
-		defer resp.Body.Close()
-		bb, _ := io.ReadAll(resp.Body)
-		var pr Product
-		rb := json.Unmarshal(bb, &pr)
-		if rb != nil {
-			return nil, rb
-		}
-		fmt.Println(pr.Total)
-		for _, v := range pr.Items {
-			result = append(result, []string{
-				v.Title,
-				fmt.Sprintf("https://silpo.ua/product/%s", v.SectionSlug),
-				fmt.Sprintf("%.2f грн/%s", v.DisplayPrice, v.DisplayRatio),
-				title,
-				"silpo",
-			})
-		}
+	var wg sync.WaitGroup
+	var httpSemaphore = make(chan struct{}, 25)
+	resultsChan := make(chan []string)
+
+	for _, ci := range cti {
+		wg.Add(1)
+		go func(ci CategoryItem) {
+			defer wg.Done()
+			params := map[string]string{
+				"deliveryType":           "DeliveryHome",
+				"category":               ci.Slug,
+				"includeChildCategories": "true",
+				"sortBy":                 "popularity",
+				"sortDirection":          "desc",
+				"inStock":                "false",
+				"limit":                  strconv.Itoa(querySize),
+				"offset":                 strconv.Itoa(0),
+			}
+			fmt.Println("Fetching products for", ci.Slug)
+			var offsetWg sync.WaitGroup
+			for offset := 0; offset <= ci.Total; offset += querySize {
+				offsetWg.Add(1)
+				go func(offset int) {
+					httpSemaphore <- struct{}{} // Acquire
+					defer func() { <-httpSemaphore }()
+					defer offsetWg.Done()
+					mu.Lock()
+					params["offset"] = strconv.Itoa(offset)
+					p := url.Values{}
+					for k, v := range params {
+						p.Add(k, v)
+					}
+					queryString := p.Encode()
+					mu.Unlock()
+
+					reqUrl := fmt.Sprintf("%s?%s", productsUrl, queryString)
+					resp, respErr := makeRequest(client, reqUrl, nil)
+					if respErr != nil {
+						panic(respErr)
+					}
+					respBody, respBodyErr := io.ReadAll(resp.Body)
+					if respBodyErr != nil {
+						panic(respBodyErr)
+					}
+					resp.Body.Close()
+					var prd Product
+					rbjson := json.Unmarshal(respBody, &prd)
+					if rbjson != nil {
+						panic(rbjson)
+					}
+					for _, v := range prd.Items {
+						resultsChan <- []string{
+							v.Title,
+							fmt.Sprintf("https://silpo.ua/product/%s", v.SectionSlug),
+							fmt.Sprintf("%.2f грн/%s", v.DisplayPrice, v.DisplayRatio),
+							ci.Title,
+							"silpo",
+						}
+					}
+				}(offset)
+			}
+			offsetWg.Wait()
+		}(ci)
+
 	}
+
+	go func() {
+		wg.Wait()
+		close(resultsChan)
+	}()
+
+	for product := range resultsChan {
+		result = append(result, product)
+	}
+
 	return result, nil
 }
 
 func main() {
 	log.Println("Starting main program")
-	cts, err := getCategories()
-	if err != nil {
-		panic(err)
-	}
+	cts := Categories{}
+	cts.getCategories()
+	cts.getCategoriesTitles()
 
-	ctts, tErr := getCategoriesTitles(cts)
-	if tErr != nil {
-		panic(tErr)
-	}
-
-	fmt.Println(cts)
-	fmt.Println(ctts)
-	products, pErr := getProducts(ctts)
-	if pErr != nil {
-		panic(err)
-	}
-
-	records := [][]string{
-		{"Name", "Ref", "Price", "Category", "Shop"},
-	}
-
-	// Create the CSV file
 	file, err := os.Create("output.csv")
 	if err != nil {
 		log.Fatal("Error creating file:", err)
 	}
-	defer file.Close() // Ensure the file is closed when the function exits
+	defer file.Close()
 
-	// Create a new CSV writer
 	writer := csv.NewWriter(file)
-	defer writer.Flush() // Ensure any buffered data is written to the file
+	defer writer.Flush()
 
-	// Write all records to the CSV file
-	for _, record := range records {
-		if err := writer.Write(record); err != nil {
-			log.Fatal("Error writing record to CSV:", err)
-		}
-		if err := writer.WriteAll(products); err != nil {
-			log.Fatal("Error writing record to CSV:", err)
-		}
+	header := []string{"Name", "Ref", "Price", "Category", "Shop"}
+
+	if err = writer.Write(header); err != nil {
+		log.Fatal("Error writing record to CSV:", err)
+	}
+
+	products, prErr := getProducts(cts.Items)
+	if prErr != nil {
+		log.Fatal(prErr)
+	}
+
+	if err := writer.WriteAll(products); err != nil {
+		log.Fatal("Error writing record to CSV:", err)
 	}
 
 	log.Println("Data successfully written to output.csv")
